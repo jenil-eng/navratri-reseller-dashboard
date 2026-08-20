@@ -1,16 +1,26 @@
 const { google } = require('googleapis');
 const { readData, writeData } = require('./localStorageFallbackService');
 
-const SPREADSHEET_ID = process.env.GOOGLE_SHEET_ID;
-const SERVICE_ACCOUNT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-
-// Handle private key formatted with escaped newlines
-let PRIVATE_KEY = process.env.GOOGLE_PRIVATE_KEY;
-if (PRIVATE_KEY) {
-  PRIVATE_KEY = PRIVATE_KEY.replace(/\\n/g, '\n');
+// Robust helper to format Google Private Key across deployment platforms (Vercel, Render, Railway, etc.)
+function formatPrivateKey(rawKey) {
+  if (!rawKey) return '';
+  let cleaned = String(rawKey).trim();
+  
+  // Strip surrounding quotes if pasted into environment variable UI with quotes
+  if ((cleaned.startsWith('"') && cleaned.endsWith('"')) || (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
+    cleaned = cleaned.substring(1, cleaned.length - 1).trim();
+  }
+  
+  // Replace literal '\n' or '\\n' string sequences with actual newline characters
+  cleaned = cleaned.replace(/\\n/g, '\n').replace(/\r/g, '');
+  return cleaned;
 }
 
-const isConfigured = Boolean(SPREADSHEET_ID && SERVICE_ACCOUNT_EMAIL && PRIVATE_KEY);
+const SPREADSHEET_ID = process.env.GOOGLE_SHEET_ID ? String(process.env.GOOGLE_SHEET_ID).trim() : '';
+const SERVICE_ACCOUNT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL ? String(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL).trim() : '';
+const PRIVATE_KEY = formatPrivateKey(process.env.GOOGLE_PRIVATE_KEY);
+
+const isConfigured = Boolean(SPREADSHEET_ID && SERVICE_ACCOUNT_EMAIL && PRIVATE_KEY && PRIVATE_KEY.includes('BEGIN PRIVATE KEY'));
 
 let sheetsApi = null;
 
@@ -35,11 +45,12 @@ if (isConfigured) {
  */
 async function ensureSheetsInitialized() {
   if (!isConfigured || !sheetsApi) return;
+  
+  // Check SALES headers safely
   try {
-    // Check SALES headers
     const salesRes = await sheetsApi.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: 'SALES!A1:O1',
+      range: 'SALES!A5:O5',
     });
     if (!salesRes.data.values || salesRes.data.values.length === 0) {
       const salesHeaders = [
@@ -61,14 +72,19 @@ async function ensureSheetsInitialized() {
       ];
       await sheetsApi.spreadsheets.values.update({
         spreadsheetId: SPREADSHEET_ID,
-        range: 'SALES!A1:O1',
+        range: 'SALES!A5:O5',
         valueInputOption: 'USER_ENTERED',
         requestBody: { values: [salesHeaders] }
       });
       console.log('[GoogleSheetsService] Formatted SALES header row.');
     }
+  } catch (err) {
+    // If range/tab check fails, log warning safely
+    console.log('[GoogleSheetsService] SALES tab check:', err.message);
+  }
 
-    // Check LISTS headers
+  // Check LISTS headers safely
+  try {
     const listsRes = await sheetsApi.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: 'LISTS!A1:E1',
@@ -90,7 +106,7 @@ async function ensureSheetsInitialized() {
       console.log('[GoogleSheetsService] Formatted LISTS header row.');
     }
   } catch (err) {
-    console.error('[GoogleSheetsService] Error during ensureSheetsInitialized:', err.message);
+    console.log('[GoogleSheetsService] LISTS tab check (will use default options if tab not present):', err.message);
   }
 }
 
