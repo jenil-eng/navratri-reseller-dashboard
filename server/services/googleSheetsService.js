@@ -122,7 +122,7 @@ async function ensureSheetsInitialized() {
     console.log('[GoogleSheetsService] SALES tab check:', err.message);
   }
 
-  // Ensure LISTS tab exists and headers are set up
+  // Ensure LISTS tab exists, headers are set up, and initial options are seeded if empty
   try {
     await ensureSheetTabExists('LISTS');
     const listsRes = await sheetsApi.spreadsheets.values.get({
@@ -144,6 +144,56 @@ async function ensureSheetsInitialized() {
         requestBody: { values: [listsHeaders] }
       });
       console.log('[GoogleSheetsService] Formatted LISTS header row.');
+    }
+
+    // Check if LISTS!A2:E has data, seed default options if empty
+    const dataCheck = await sheetsApi.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: 'LISTS!A2:E',
+    });
+
+    if (!dataCheck.data.values || dataCheck.data.values.length === 0) {
+      const defaultPassNames = [
+        "United Way Garba Pass",
+        "Shankus Dandiya Season Pass",
+        "Falguni Pathak Live Pass",
+        "Kora Kendra Garba Pass",
+        "Garba Class Special Pass",
+        "Dome NSCI Garba Night",
+        "LVP Heritage Garba Pass",
+        "Maha Garba Pass"
+      ];
+      const defaultCategories = ["General", "VIP", "Couple", "Group", "Premium", "Other"];
+      const defaultStatuses = ["Yes", "No", "Partially"];
+      const defaultMethods = ["WhatsApp", "Email", "Physical", "QR Code", "Other"];
+      const defaultDays = ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5", "Day 6", "Day 7", "Day 8", "Day 9"];
+
+      const maxLen = Math.max(
+        defaultPassNames.length,
+        defaultCategories.length,
+        defaultStatuses.length,
+        defaultMethods.length,
+        defaultDays.length
+      );
+
+      const rows = [];
+      for (let i = 0; i < maxLen; i++) {
+        rows.push([
+          defaultPassNames[i] || '',
+          defaultCategories[i] || '',
+          defaultStatuses[i] || '',
+          defaultMethods[i] || '',
+          defaultDays[i] || ''
+        ]);
+      }
+
+      await sheetsApi.spreadsheets.values.update({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `LISTS!A2:E${rows.length + 1}`,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: { values: rows }
+      });
+      console.log('[GoogleSheetsService] Pre-populated default options into LISTS sheet tab.');
     }
   } catch (err) {
     console.log('[GoogleSheetsService] LISTS tab check:', err.message);
