@@ -40,6 +40,12 @@ if (isConfigured) {
   console.log('[GoogleSheetsService] Google Sheets API credentials not set or incomplete. Operating in persistent local storage mode.');
 }
 
+let isInitialized = false;
+let listsCache = null;
+let salesCache = null;
+let salesCacheTimestamp = 0;
+const SALES_CACHE_TTL = 4000; // 4 seconds short-lived cache
+
 /**
  * Checks if a sheet/worksheet tab exists in the Google Spreadsheet and creates it if missing.
  */
@@ -80,13 +86,13 @@ async function ensureSheetTabExists(tabTitle) {
 }
 
 /**
- * Ensures header row exists on Google Sheets if empty
+ * Ensures header row exists on Google Sheets if empty (Runs only ONCE per server lifetime)
  */
 async function ensureSheetsInitialized() {
-  if (!isConfigured || !sheetsApi) return;
+  if (!isConfigured || !sheetsApi || isInitialized) return;
   
-  // Ensure SALES tab exists and headers are set up
   try {
+    // Ensure SALES tab exists and headers are set up
     await ensureSheetTabExists('SALES');
     const salesRes = await sheetsApi.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
@@ -118,12 +124,8 @@ async function ensureSheetsInitialized() {
       });
       console.log('[GoogleSheetsService] Formatted SALES header row.');
     }
-  } catch (err) {
-    console.log('[GoogleSheetsService] SALES tab check:', err.message);
-  }
 
-  // Ensure LISTS tab exists, headers are set up, and initial options are seeded if empty
-  try {
+    // Ensure LISTS tab exists, headers are set up, and initial options are seeded if empty
     await ensureSheetTabExists('LISTS');
     const listsRes = await sheetsApi.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
@@ -195,8 +197,10 @@ async function ensureSheetsInitialized() {
       });
       console.log('[GoogleSheetsService] Pre-populated default options into LISTS sheet tab.');
     }
+
+    isInitialized = true;
   } catch (err) {
-    console.log('[GoogleSheetsService] LISTS tab check:', err.message);
+    console.log('[GoogleSheetsService] Initialization check:', err.message);
   }
 }
 
@@ -274,8 +278,15 @@ function objectToSaleRow(sale) {
 // ----------------------------------------------------
 
 async function getSales() {
+  const now = Date.now();
+  if (salesCache && (now - salesCacheTimestamp < SALES_CACHE_TTL)) {
+    return salesCache;
+  }
+
   if (!isConfigured || !sheetsApi) {
     const data = readData();
+    salesCache = data.sales;
+    salesCacheTimestamp = now;
     return data.sales;
   }
 
@@ -303,6 +314,8 @@ async function getSales() {
       }
     });
 
+    salesCache = validSales;
+    salesCacheTimestamp = Date.now();
     return validSales;
   } catch (err) {
     console.error('[GoogleSheetsService] Error reading sales from Google Sheets:', err.message);
@@ -311,6 +324,7 @@ async function getSales() {
 }
 
 async function addSale(saleData) {
+  salesCache = null; // Invalidate cache
   // Compute totals
   const qty = Number(saleData.quantity) || 0;
   const buying = Number(saleData.buyingPrice) || 0;
@@ -380,6 +394,7 @@ async function addSale(saleData) {
 }
 
 async function updateSale(saleIdOrRowIndex, saleData) {
+  salesCache = null; // Invalidate cache
   const qty = Number(saleData.quantity) || 0;
   const buying = Number(saleData.buyingPrice) || 0;
   const selling = Number(saleData.sellingPrice) || 0;
@@ -440,6 +455,7 @@ async function updateSale(saleIdOrRowIndex, saleData) {
 }
 
 async function deleteSale(saleIdOrRowIndex) {
+  salesCache = null; // Invalidate cache
   if (!isConfigured || !sheetsApi) {
     const data = readData();
     const initialLen = data.sales.length;
@@ -481,8 +497,13 @@ async function deleteSale(saleIdOrRowIndex) {
 // ----------------------------------------------------
 
 async function getLists() {
+  if (listsCache) {
+    return listsCache;
+  }
+
   if (!isConfigured || !sheetsApi) {
     const data = readData();
+    listsCache = data.lists;
     return data.lists;
   }
 
@@ -509,8 +530,7 @@ async function getLists() {
       if (r[4] && r[4].trim()) navratriDays.push(r[4].trim());
     });
 
-    // Provide default lists if sheet columns are empty
-    return {
+    listsCache = {
       passNames: passNames.length ? passNames : [
         "United Way Garba Pass",
         "Shankus Dandiya Season Pass",
@@ -526,15 +546,18 @@ async function getLists() {
       passDeliveryMethods: passDeliveryMethods.length ? passDeliveryMethods : ["WhatsApp", "Email", "Physical", "QR Code", "Other"],
       navratriDays: navratriDays.length ? navratriDays : ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5", "Day 6", "Day 7", "Day 8", "Day 9"]
     };
+
+    return listsCache;
   } catch (err) {
     console.error('[GoogleSheetsService] Error getting lists from Google Sheets:', err.message);
-    // Return fallback lists on error
     const fallback = readData();
+    listsCache = fallback.lists;
     return fallback.lists;
   }
 }
 
 async function updateEntireLists(listsObj) {
+  listsCache = listsObj;
   // Update local storage backup
   const data = readData();
   data.lists = listsObj;
