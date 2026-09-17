@@ -461,7 +461,16 @@ async function getLists() {
 
     // Provide default lists if sheet columns are empty
     return {
-      passNames: passNames.length ? passNames : ["United Way Garba Pass", "Shankus Dandiya Pass"],
+      passNames: passNames.length ? passNames : [
+        "United Way Garba Pass",
+        "Shankus Dandiya Season Pass",
+        "Falguni Pathak Live Pass",
+        "Kora Kendra Garba Pass",
+        "Garba Class Special Pass",
+        "Dome NSCI Garba Night",
+        "LVP Heritage Garba Pass",
+        "Maha Garba Pass"
+      ],
       passCategories: passCategories.length ? passCategories : ["General", "VIP", "Couple", "Group", "Premium", "Other"],
       passGivenStatus: passGivenStatus.length ? passGivenStatus : ["Yes", "No", "Partially"],
       passDeliveryMethods: passDeliveryMethods.length ? passDeliveryMethods : ["WhatsApp", "Email", "Physical", "QR Code", "Other"],

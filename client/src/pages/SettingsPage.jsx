@@ -72,7 +72,7 @@ export default function SettingsPage() {
     }
   };
 
-  // Add item to top of list (highest priority)
+  // Add item to bottom of list (under present names)
   const handleAddItem = (sectionKey, itemValue, clearFn) => {
     if (!itemValue || !itemValue.trim()) {
       showError('Option value cannot be blank.');
@@ -84,10 +84,10 @@ export default function SettingsPage() {
       showError('This option already exists.');
       return;
     }
-    // Add to top of list so it has top priority
+    // Append to bottom of list under present names
     const updated = {
       ...lists,
-      [sectionKey]: [clean, ...currentArr]
+      [sectionKey]: [...currentArr, clean]
     };
     saveListsToBackend(updated);
     clearFn('');
