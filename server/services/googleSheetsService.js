@@ -41,13 +41,53 @@ if (isConfigured) {
 }
 
 /**
+ * Checks if a sheet/worksheet tab exists in the Google Spreadsheet and creates it if missing.
+ */
+async function ensureSheetTabExists(tabTitle) {
+  if (!isConfigured || !sheetsApi) return false;
+  try {
+    const spreadsheet = await sheetsApi.spreadsheets.get({
+      spreadsheetId: SPREADSHEET_ID,
+    });
+    const sheets = spreadsheet.data.sheets || [];
+    const exists = sheets.some(
+      s => s.properties && s.properties.title && s.properties.title.trim().toUpperCase() === tabTitle.trim().toUpperCase()
+    );
+
+    if (!exists) {
+      console.log(`[GoogleSheetsService] Worksheet tab '${tabTitle}' not found in Google Sheet. Automatically creating tab...`);
+      await sheetsApi.spreadsheets.batchUpdate({
+        spreadsheetId: SPREADSHEET_ID,
+        requestBody: {
+          requests: [
+            {
+              addSheet: {
+                properties: {
+                  title: tabTitle
+                }
+              }
+            }
+          ]
+        }
+      });
+      console.log(`[GoogleSheetsService] Tab '${tabTitle}' created successfully.`);
+    }
+    return true;
+  } catch (err) {
+    console.error(`[GoogleSheetsService] Error checking/creating tab '${tabTitle}':`, err.message);
+    return false;
+  }
+}
+
+/**
  * Ensures header row exists on Google Sheets if empty
  */
 async function ensureSheetsInitialized() {
   if (!isConfigured || !sheetsApi) return;
   
-  // Check SALES headers safely
+  // Ensure SALES tab exists and headers are set up
   try {
+    await ensureSheetTabExists('SALES');
     const salesRes = await sheetsApi.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: 'SALES!A5:O5',
@@ -79,12 +119,12 @@ async function ensureSheetsInitialized() {
       console.log('[GoogleSheetsService] Formatted SALES header row.');
     }
   } catch (err) {
-    // If range/tab check fails, log warning safely
     console.log('[GoogleSheetsService] SALES tab check:', err.message);
   }
 
-  // Check LISTS headers safely
+  // Ensure LISTS tab exists and headers are set up
   try {
+    await ensureSheetTabExists('LISTS');
     const listsRes = await sheetsApi.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: 'LISTS!A1:E1',
@@ -106,7 +146,7 @@ async function ensureSheetsInitialized() {
       console.log('[GoogleSheetsService] Formatted LISTS header row.');
     }
   } catch (err) {
-    console.log('[GoogleSheetsService] LISTS tab check (will use default options if tab not present):', err.message);
+    console.log('[GoogleSheetsService] LISTS tab check:', err.message);
   }
 }
 
@@ -248,6 +288,7 @@ async function addSale(saleData) {
   }
 
   try {
+    await ensureSheetsInitialized();
     const rowValues = objectToSaleRow(newSale);
     
     // Read existing rows starting at row 6 to find the first blank row (where Customer Name / Pass Name is empty)
@@ -318,6 +359,7 @@ async function updateSale(saleIdOrRowIndex, saleData) {
   }
 
   try {
+    await ensureSheetsInitialized();
     // Determine row index in Google Sheets
     let rowIndex = Number(saleIdOrRowIndex);
     if (isNaN(rowIndex)) {
@@ -360,6 +402,7 @@ async function deleteSale(saleIdOrRowIndex) {
   }
 
   try {
+    await ensureSheetsInitialized();
     let rowIndex = Number(saleIdOrRowIndex);
     if (isNaN(rowIndex)) {
       const sales = await getSales();
@@ -433,14 +476,18 @@ async function getLists() {
 }
 
 async function updateEntireLists(listsObj) {
+  // Update local storage backup
+  const data = readData();
+  data.lists = listsObj;
+  writeData(data);
+
   if (!isConfigured || !sheetsApi) {
-    const data = readData();
-    data.lists = listsObj;
-    writeData(data);
     return data.lists;
   }
 
   try {
+    await ensureSheetsInitialized();
+
     const maxLen = Math.max(
       (listsObj.passNames || []).length,
       (listsObj.passCategories || []).length,
