@@ -4,6 +4,7 @@ import StatCard from '../components/StatCard';
 import { StatCardSkeleton, ChartSkeleton, TableSkeleton } from '../components/SkeletonLoader';
 import SaleViewModal from '../components/SaleViewModal';
 import SaleEditModal from '../components/SaleEditModal';
+import QuickAddSaleModal from '../components/QuickAddSaleModal';
 import { useToast } from '../components/Toast';
 import { formatRupee, formatDateDisplay, getTodayInputDate, getPassGivenBadgeProps, getProfitBadgeProps } from '../utils/formatters';
 import {
@@ -19,7 +20,8 @@ import {
   RefreshCw,
   Eye,
   Edit,
-  Sparkles
+  Sparkles,
+  Plus
 } from 'lucide-react';
 import {
   BarChart,
@@ -51,6 +53,7 @@ export default function DashboardPage() {
   // Modals
   const [viewingSale, setViewingSale] = useState(null);
   const [editingSale, setEditingSale] = useState(null);
+  const [showQuickAddModal, setShowQuickAddModal] = useState(false);
 
   const { showSuccess, showError } = useToast();
 
@@ -232,6 +235,13 @@ export default function DashboardPage() {
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowQuickAddModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold rounded-xl shadow-md shadow-brand-600/30 transition"
+          >
+            <Plus className="w-4 h-4" />
+            Quick Add Sale
+          </button>
           <button
             onClick={handleRefresh}
             disabled={refreshing}
@@ -581,6 +591,17 @@ export default function DashboardPage() {
           dropdownLists={lists}
           onSave={handleEditSave}
           onClose={() => setEditingSale(null)}
+        />
+      )}
+
+      {/* Quick Add Modal */}
+      {showQuickAddModal && (
+        <QuickAddSaleModal
+          dropdownLists={lists}
+          onSaleAdded={() => {
+            fetchData();
+          }}
+          onClose={() => setShowQuickAddModal(false)}
         />
       )}
     </div>
