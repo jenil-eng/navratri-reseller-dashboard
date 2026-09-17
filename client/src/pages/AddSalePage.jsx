@@ -16,6 +16,9 @@ export default function AddSalePage() {
     passDeliveryMethods: [],
     navratriDays: []
   });
+  const [salesHistory, setSalesHistory] = useState([]);
+  const [returningCustomer, setReturningCustomer] = useState(null);
+
   const [loadingDropdowns, setLoadingDropdowns] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
@@ -38,11 +41,16 @@ export default function AddSalePage() {
   const [errors, setErrors] = useState({});
 
   useEffect(() => {
-    async function fetchLists() {
+    async function initData() {
       try {
-        const res = await api.get('/lists');
-        const lists = res.data.data || {};
+        const [listsRes, salesRes] = await Promise.all([
+          api.get('/lists'),
+          api.get('/sales')
+        ]);
+        const lists = listsRes.data.data || {};
+        const sales = salesRes.data.data || [];
         setDropdowns(lists);
+        setSalesHistory(sales);
         
         // Set default dropdown values
         setFormData(prev => ({
@@ -54,13 +62,48 @@ export default function AddSalePage() {
           navratriDay: lists.navratriDays?.[0] || 'Day 1'
         }));
       } catch (err) {
-        showError('Failed to load dropdown lists from Google Sheets.');
+        showError('Failed to load initial form data.');
       } finally {
         setLoadingDropdowns(false);
       }
     }
-    fetchLists();
+    initData();
   }, []);
+
+  // Helper to extract clean 10-digit mobile number
+  const cleanDigits = (str) => {
+    if (!str) return '';
+    const digits = String(str).replace(/\D/g, '');
+    if (digits.length > 10 && (digits.startsWith('91') || digits.startsWith('091'))) {
+      return digits.slice(-10);
+    }
+    return digits.slice(-10);
+  };
+
+  // Auto-detect returning customer when typing mobile number
+  const handleMobileChange = (val) => {
+    setFormData(prev => ({ ...prev, mobileNumber: val }));
+
+    const cleaned = cleanDigits(val);
+    if (cleaned.length === 10) {
+      const matches = salesHistory.filter(s => cleanDigits(s.mobileNumber) === cleaned);
+      if (matches.length > 0) {
+        const sorted = [...matches].sort((a, b) => new Date(b.dateSold || 0) - new Date(a.dateSold || 0));
+        const latestMatch = sorted[0];
+        if (latestMatch && latestMatch.customerName) {
+          setFormData(prev => ({ ...prev, customerName: latestMatch.customerName }));
+          setReturningCustomer({
+            name: latestMatch.customerName,
+            pastOrders: matches.length,
+            lastPass: latestMatch.passName,
+            lastDate: latestMatch.dateSold
+          });
+          return;
+        }
+      }
+    }
+    setReturningCustomer(null);
+  };
 
   // Derived Calculations
   const qty = Math.max(1, Number(formData.quantity) || 1);
@@ -116,6 +159,7 @@ export default function AddSalePage() {
       const res = await api.post('/sales', payload);
       if (res.data && res.data.success) {
         showSuccess('Sale added successfully.');
+        setReturningCustomer(null);
         // Reset form
         setFormData({
           customerName: '',
@@ -176,13 +220,65 @@ export default function AddSalePage() {
           
           {/* Group 1: Customer Details */}
           <div>
-            <h3 className="text-xs font-bold uppercase tracking-wider text-brand-600 mb-4 pb-2 border-b border-slate-100">
-              Customer Information
-            </h3>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 pb-2 border-b border-slate-100 gap-1">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-brand-600">
+                Customer Information
+              </h3>
+              <span className="text-[11px] font-medium text-slate-400">
+                💡 Type Mobile Number first to auto-detect returning customers
+              </span>
+            </div>
+
+            {/* Returning Customer Alert Banner */}
+            {returningCustomer && (
+              <div className="mb-5 p-4 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border border-emerald-200 text-xs text-emerald-900 shadow-xs flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold shrink-0 shadow-sm">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="font-bold text-slate-900 text-xs">
+                      Returning Customer Detected: <span className="text-emerald-700 font-extrabold">{returningCustomer.name}</span>
+                    </p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Auto-filled name from {returningCustomer.pastOrders} past purchase{returningCustomer.pastOrders > 1 ? 's' : ''} (Last pass: {returningCustomer.lastPass || 'Pass'})
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReturningCustomer(null);
+                    setFormData(prev => ({ ...prev, customerName: '' }));
+                  }}
+                  className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 underline px-2 py-1 shrink-0"
+                >
+                  Change Name
+                </button>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
-                  1. Customer Name *
+                  1. Mobile Number *
+                </label>
+                <input
+                  type="text"
+                  value={formData.mobileNumber}
+                  onChange={(e) => handleMobileChange(e.target.value)}
+                  className={`w-full px-4 py-2.5 rounded-xl border text-sm font-mono focus:outline-none focus:ring-2 transition ${
+                    errors.mobileNumber ? 'border-rose-400 focus:ring-rose-500' : 'border-slate-200 focus:ring-brand-500'
+                  }`}
+                  placeholder="e.g. 9876543210"
+                  autoFocus
+                />
+                {errors.mobileNumber && <p className="text-xs text-rose-500 mt-1">{errors.mobileNumber}</p>}
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
+                  2. Customer Name *
                 </label>
                 <input
                   type="text"
@@ -194,22 +290,6 @@ export default function AddSalePage() {
                   placeholder="e.g. Rahul Patel"
                 />
                 {errors.customerName && <p className="text-xs text-rose-500 mt-1">{errors.customerName}</p>}
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
-                  2. Mobile Number *
-                </label>
-                <input
-                  type="text"
-                  value={formData.mobileNumber}
-                  onChange={(e) => setFormData({ ...formData, mobileNumber: e.target.value })}
-                  className={`w-full px-4 py-2.5 rounded-xl border text-sm font-mono focus:outline-none focus:ring-2 transition ${
-                    errors.mobileNumber ? 'border-rose-400 focus:ring-rose-500' : 'border-slate-200 focus:ring-brand-500'
-                  }`}
-                  placeholder="e.g. 9876543210"
-                />
-                {errors.mobileNumber && <p className="text-xs text-rose-500 mt-1">{errors.mobileNumber}</p>}
               </div>
             </div>
           </div>
