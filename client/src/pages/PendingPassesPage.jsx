@@ -3,6 +3,7 @@ import api from '../utils/api';
 import { useToast } from '../components/Toast';
 import SaleViewModal from '../components/SaleViewModal';
 import SaleEditModal from '../components/SaleEditModal';
+import HandoverPassModal from '../components/HandoverPassModal';
 import { formatRupee, formatDateDisplay, getPassGivenBadgeProps } from '../utils/formatters';
 import {
   PackageCheck,
@@ -61,6 +62,10 @@ export default function PendingPassesPage() {
   // Modals
   const [viewingSale, setViewingSale] = useState(null);
   const [editingSale, setEditingSale] = useState(null);
+  const [handoverModalSale, setHandoverModalSale] = useState(null);
+  const [bulkHandoverOpen, setBulkHandoverOpen] = useState(false);
+  const [bulkBuyingPrice, setBulkBuyingPrice] = useState('');
+  const [bulkDeliveryMethod, setBulkDeliveryMethod] = useState('Other');
   const [noteModalSale, setNoteModalSale] = useState(null);
   const [noteText, setNoteText] = useState('');
   const [copiedMobile, setCopiedMobile] = useState(null);
@@ -231,6 +236,67 @@ export default function PendingPassesPage() {
     }
   };
 
+  // Handover Pass with Buying Price confirmation
+  const handleHandoverConfirm = async ({ passGiven, buyingPrice, passDeliveryMethod, notes }) => {
+    if (!handoverModalSale) return;
+    const targetId = handoverModalSale.id || handoverModalSale.rowIndex;
+    setUpdatingId(targetId);
+
+    const prevSales = [...sales];
+    const qty = Number(handoverModalSale.quantity) || 1;
+    const sellPrice = Number(handoverModalSale.sellingPrice) || 0;
+    const buyPrice = Number(buyingPrice) || 0;
+    const totalCost = qty * buyPrice;
+    const totalRevenue = Number(handoverModalSale.totalSellingAmount) || (qty * sellPrice);
+    const profit = totalRevenue - totalCost;
+
+    // Optimistic Update
+    setSales(current =>
+      current.map(item => {
+        const itemId = item.id || item.rowIndex;
+        if (itemId === targetId) {
+          return {
+            ...item,
+            passGiven: 'Yes',
+            buyingPrice: buyPrice,
+            totalBuyingCost: totalCost,
+            profit: profit,
+            passDeliveryMethod: passDeliveryMethod,
+            notes: notes
+          };
+        }
+        return item;
+      })
+    );
+
+    try {
+      const payload = {
+        passGiven: 'Yes',
+        buyingPrice: buyPrice,
+        passDeliveryMethod: passDeliveryMethod,
+        notes: notes
+      };
+
+      const res = await api.patch(`/sales/${targetId}/status`, payload);
+      showSuccess(`✓ Pass marked as Given! Buying: ${formatRupee(buyPrice)}, Profit: ${formatRupee(profit)} (${handoverModalSale.customerName})`);
+
+      if (res.data?.data) {
+        setSales(current =>
+          current.map(item => {
+            const itemId = item.id || item.rowIndex;
+            return itemId === targetId ? { ...item, ...res.data.data } : item;
+          })
+        );
+      }
+    } catch (err) {
+      setSales(prevSales);
+      showError(err.response?.data?.message || 'Failed to update pass status.');
+    } finally {
+      setUpdatingId(null);
+      setHandoverModalSale(null);
+    }
+  };
+
   // Direct Delivery Method Update
   const handleUpdateDeliveryMethod = async (sale, newMethod) => {
     const targetId = sale.id || sale.rowIndex;
@@ -321,31 +387,51 @@ export default function PendingPassesPage() {
     }
   };
 
-  // Bulk Delivery Method Update
-  const handleBulkUpdateDelivery = async (newMethod) => {
-    if (selectedIds.length === 0 || !newMethod) return;
+  // Bulk Handover with optional Buying Price
+  const handleBulkHandoverConfirm = async () => {
+    if (selectedIds.length === 0) return;
     setBulkUpdating(true);
 
     try {
-      await api.post('/sales/bulk-status', {
+      const payload = {
         items: selectedIds,
-        passDeliveryMethod: newMethod
-      });
+        passGiven: 'Yes',
+        passDeliveryMethod: bulkDeliveryMethod
+      };
+      if (bulkBuyingPrice !== '' && !isNaN(Number(bulkBuyingPrice))) {
+        payload.buyingPrice = Number(bulkBuyingPrice);
+      }
+
+      await api.post('/sales/bulk-status', payload);
 
       setSales(current =>
         current.map(item => {
           const itemId = item.id || item.rowIndex;
           if (selectedIds.includes(itemId)) {
-            return { ...item, passDeliveryMethod: newMethod };
+            const qty = Number(item.quantity) || 1;
+            const buyPrice = bulkBuyingPrice !== '' ? Number(bulkBuyingPrice) : Number(item.buyingPrice) || 0;
+            const sellPrice = Number(item.sellingPrice) || 0;
+            const totalCost = qty * buyPrice;
+            const totalRevenue = Number(item.totalSellingAmount) || (qty * sellPrice);
+            return {
+              ...item,
+              passGiven: 'Yes',
+              buyingPrice: buyPrice,
+              totalBuyingCost: totalCost,
+              profit: totalRevenue - totalCost,
+              passDeliveryMethod: bulkDeliveryMethod || item.passDeliveryMethod
+            };
           }
           return item;
         })
       );
 
-      showSuccess(`✓ Set delivery method to "${newMethod}" for ${selectedIds.length} passes.`);
+      showSuccess(`✓ Marked ${selectedIds.length} passes as Given (Yes)!`);
       setSelectedIds([]);
+      setBulkHandoverOpen(false);
+      setBulkBuyingPrice('');
     } catch (err) {
-      showError(err.response?.data?.message || 'Bulk delivery update failed.');
+      showError(err.response?.data?.message || 'Bulk status update failed.');
     } finally {
       setBulkUpdating(false);
     }
@@ -742,7 +828,7 @@ export default function PendingPassesPage() {
 
           <div className="flex flex-wrap items-center gap-2">
             <button
-              onClick={() => handleBulkUpdateStatus('Yes')}
+              onClick={() => setBulkHandoverOpen(true)}
               disabled={bulkUpdating}
               className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md transition disabled:opacity-50"
             >
@@ -860,12 +946,14 @@ export default function PendingPassesPage() {
                   <th className="py-3.5 px-4">Customer & Contact</th>
                   <th className="py-3.5 px-4">Pass Name & Day</th>
                   <th className="py-3.5 px-4 text-center">Qty</th>
+                  <th className="py-3.5 px-4 text-right">Buying Cost</th>
+                  <th className="py-3.5 px-4 text-right">Selling Total</th>
+                  <th className="py-3.5 px-4 text-right">Profit</th>
                   <th className="py-3.5 px-4">Delivery Method</th>
                   <th className="py-3.5 px-4 text-center">Current Status</th>
                   <th className="py-3.5 px-4 text-center min-w-[280px]">
                     Direct Status Update
                   </th>
-                  <th className="py-3.5 px-4 text-right">Selling Total</th>
                   <th className="py-3.5 px-4 text-center">Actions</th>
                 </tr>
               </thead>
@@ -957,6 +1045,35 @@ export default function PendingPassesPage() {
                         </span>
                       </td>
 
+                      {/* Buying Price / Cost */}
+                      <td className="py-3.5 px-4 text-right">
+                        {sale.buyingPrice && Number(sale.buyingPrice) > 0 ? (
+                          <div>
+                            <span className="font-mono text-slate-800 font-bold">{formatRupee(sale.buyingPrice)}</span>
+                            <p className="text-[10px] text-slate-400 font-mono">Cost: {formatRupee(sale.totalBuyingCost)}</p>
+                          </div>
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                            ₹0 Pending
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Selling Price Total */}
+                      <td className="py-3.5 px-4 text-right">
+                        <span className="font-mono font-bold text-slate-800">{formatRupee(sale.totalSellingAmount)}</span>
+                        <p className="text-[10px] text-slate-400 font-mono">{formatRupee(sale.sellingPrice)} / pass</p>
+                      </td>
+
+                      {/* Profit */}
+                      <td className="py-3.5 px-4 text-right">
+                        <span className={`px-2 py-0.5 rounded-md font-bold font-mono text-xs ${
+                          sale.profit >= 0 ? 'text-emerald-700 bg-emerald-50 border border-emerald-200' : 'text-rose-700 bg-rose-50 border border-rose-200'
+                        }`}>
+                          {formatRupee(sale.profit)}
+                        </span>
+                      </td>
+
                       {/* Delivery Method Selector (Interactive Inline) */}
                       <td className="py-3.5 px-4">
                         <select
@@ -984,16 +1101,16 @@ export default function PendingPassesPage() {
                       {/* DIRECT 1-CLICK STATUS UPDATE ACTIONS */}
                       <td className="py-3.5 px-4">
                         <div className="flex items-center justify-center gap-1.5">
-                          {/* Button 1: Mark as Given (Yes) */}
+                          {/* Button 1: Mark as Given (Opens Handover & Buying Price Modal) */}
                           <button
-                            onClick={() => handleUpdateStatus(sale, 'Yes')}
+                            onClick={() => setHandoverModalSale(sale)}
                             disabled={isUpdating || status === 'yes'}
                             className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-xs ${
                               status === 'yes'
                                 ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 opacity-60 cursor-default'
                                 : 'bg-emerald-600 hover:bg-emerald-500 text-white hover:shadow-md hover:scale-[1.02]'
                             }`}
-                            title="Mark as Delivered / Given"
+                            title="Hand Over Pass (Enter Buying Price)"
                           >
                             <Check className="w-3.5 h-3.5" />
                             <span>Given</span>
@@ -1118,22 +1235,36 @@ export default function PendingPassesPage() {
                     </p>
                   </div>
 
-                  {/* Quantity & Amount Banner */}
-                  <div className="bg-slate-50 p-3 rounded-2xl flex items-center justify-between border border-slate-100">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-xl bg-brand-600 text-white flex items-center justify-center font-black text-sm shadow-xs">
-                        {sale.quantity}
-                      </div>
-                      <div>
+                  {/* Quantity & Financial Summary Banner */}
+                  <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 grid grid-cols-3 gap-1.5 text-center">
+                    <div>
+                      <div className="flex items-center justify-center gap-1">
+                        <span className="w-6 h-6 rounded-lg bg-brand-600 text-white flex items-center justify-center font-black text-xs">
+                          {sale.quantity}
+                        </span>
                         <span className="text-xs font-bold text-slate-900">Pass{sale.quantity !== 1 ? 'es' : ''}</span>
-                        <p className="text-[10px] text-slate-400">To Deliver</p>
                       </div>
+                      <p className="text-[10px] text-slate-400 mt-0.5">Quantity</p>
                     </div>
-                    <div className="text-right">
-                      <span className="text-xs font-bold font-mono text-slate-900">
-                        {formatRupee(sale.totalSellingAmount)}
+
+                    <div>
+                      {sale.buyingPrice && Number(sale.buyingPrice) > 0 ? (
+                        <span className="text-xs font-bold font-mono text-slate-800">
+                          {formatRupee(sale.buyingPrice)}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                          ₹0 Pending
+                        </span>
+                      )}
+                      <p className="text-[10px] text-slate-400 mt-0.5">Buying Cost</p>
+                    </div>
+
+                    <div>
+                      <span className={`text-xs font-bold font-mono ${sale.profit >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                        {formatRupee(sale.profit)}
                       </span>
-                      <p className="text-[10px] text-slate-400">Total Price</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">Profit ({formatRupee(sale.totalSellingAmount)})</p>
                     </div>
                   </div>
 
@@ -1196,7 +1327,7 @@ export default function PendingPassesPage() {
                 {/* Direct Action Bottom Toolbar */}
                 <div className="p-3 bg-slate-50/80 border-t border-slate-100 flex items-center gap-2">
                   <button
-                    onClick={() => handleUpdateStatus(sale, 'Yes')}
+                    onClick={() => setHandoverModalSale(sale)}
                     disabled={isUpdating || status === 'yes'}
                     className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs ${
                       status === 'yes'
@@ -1335,6 +1466,85 @@ export default function PendingPassesPage() {
             }
           }}
         />
+      )}
+
+      {/* Handover Pass with Buying Price Modal */}
+      <HandoverPassModal
+        sale={handoverModalSale}
+        deliveryMethods={deliveryMethodsList}
+        isOpen={Boolean(handoverModalSale)}
+        onClose={() => setHandoverModalSale(null)}
+        onConfirm={handleHandoverConfirm}
+      />
+
+      {/* Bulk Handover Modal */}
+      {bulkHandoverOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-slate-900 text-base">Bulk Handover ({selectedIds.length} Passes)</h3>
+                <p className="text-xs text-slate-500">Enter cost or apply delivery method for selected orders</p>
+              </div>
+              <button
+                onClick={() => setBulkHandoverOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Buying Price / Pass (₹)
+              </label>
+              <input
+                type="number"
+                min="0"
+                value={bulkBuyingPrice}
+                onChange={(e) => setBulkBuyingPrice(e.target.value)}
+                placeholder="Leave blank to keep individual prices"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-bold font-mono focus:ring-2 focus:ring-brand-500 focus:outline-none"
+              />
+              <p className="text-[11px] text-slate-400 mt-1">
+                Optional. If entered, updates buying cost & recalculates profit for all {selectedIds.length} orders.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Delivery Method
+              </label>
+              <select
+                value={bulkDeliveryMethod}
+                onChange={(e) => setBulkDeliveryMethod(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-medium focus:ring-2 focus:ring-brand-500 focus:outline-none"
+              >
+                {deliveryMethodsList.map(m => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setBulkHandoverOpen(false)}
+                className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleBulkHandoverConfirm}
+                disabled={bulkUpdating}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-600/20"
+              >
+                {bulkUpdating ? 'Updating...' : 'Confirm All as Given'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

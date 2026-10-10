@@ -5,6 +5,7 @@ import { TableSkeleton } from '../components/SkeletonLoader';
 import SaleViewModal from '../components/SaleViewModal';
 import SaleEditModal from '../components/SaleEditModal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
+import HandoverPassModal from '../components/HandoverPassModal';
 import { formatRupee, formatDateDisplay, getPassGivenBadgeProps, getProfitBadgeProps } from '../utils/formatters';
 import {
   Search,
@@ -49,6 +50,7 @@ export default function SalesHistoryPage() {
   const [viewingSale, setViewingSale] = useState(null);
   const [editingSale, setEditingSale] = useState(null);
   const [deletingSale, setDeletingSale] = useState(null);
+  const [handoverModalSale, setHandoverModalSale] = useState(null);
 
   const { showSuccess, showError } = useToast();
 
@@ -164,6 +166,11 @@ export default function SalesHistoryPage() {
   };
 
   const handleQuickStatusChange = async (sale, newStatus) => {
+    if (newStatus === 'Yes' && (!sale.buyingPrice || Number(sale.buyingPrice) === 0)) {
+      setHandoverModalSale(sale);
+      return;
+    }
+
     const targetId = sale.id || sale.rowIndex;
     const prevSales = [...sales];
     setSales(current =>
@@ -178,6 +185,52 @@ export default function SalesHistoryPage() {
     } catch (err) {
       setSales(prevSales);
       showError(err.response?.data?.message || 'Failed to update pass status.');
+    }
+  };
+
+  const handleHandoverConfirm = async ({ passGiven, buyingPrice, passDeliveryMethod, notes }) => {
+    if (!handoverModalSale) return;
+    const targetId = handoverModalSale.id || handoverModalSale.rowIndex;
+    const prevSales = [...sales];
+    const qty = Number(handoverModalSale.quantity) || 1;
+    const sellPrice = Number(handoverModalSale.sellingPrice) || 0;
+    const buyPrice = Number(buyingPrice) || 0;
+    const totalCost = qty * buyPrice;
+    const totalRevenue = Number(handoverModalSale.totalSellingAmount) || (qty * sellPrice);
+    const profit = totalRevenue - totalCost;
+
+    setSales(current =>
+      current.map(item => {
+        const itemId = item.id || item.rowIndex;
+        if (itemId === targetId) {
+          return {
+            ...item,
+            passGiven: 'Yes',
+            buyingPrice: buyPrice,
+            totalBuyingCost: totalCost,
+            profit: profit,
+            passDeliveryMethod: passDeliveryMethod,
+            notes: notes
+          };
+        }
+        return item;
+      })
+    );
+
+    try {
+      const payload = {
+        passGiven: 'Yes',
+        buyingPrice: buyPrice,
+        passDeliveryMethod: passDeliveryMethod,
+        notes: notes
+      };
+      await api.patch(`/sales/${targetId}/status`, payload);
+      showSuccess(`✓ Pass marked as Given! Buying: ${formatRupee(buyPrice)}, Profit: ${formatRupee(profit)} (${handoverModalSale.customerName})`);
+    } catch (err) {
+      setSales(prevSales);
+      showError(err.response?.data?.message || 'Failed to update pass status.');
+    } finally {
+      setHandoverModalSale(null);
     }
   };
 
@@ -567,6 +620,15 @@ export default function SalesHistoryPage() {
           onClose={() => setDeletingSale(null)}
         />
       )}
+
+      {/* Handover Pass with Buying Price Modal */}
+      <HandoverPassModal
+        sale={handoverModalSale}
+        deliveryMethods={lists?.passDeliveryMethods}
+        isOpen={Boolean(handoverModalSale)}
+        onClose={() => setHandoverModalSale(null)}
+        onConfirm={handleHandoverConfirm}
+      />
     </div>
   );
 }

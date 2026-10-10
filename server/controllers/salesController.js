@@ -164,16 +164,17 @@ exports.updateSale = async (req, res) => {
 exports.updatePassStatus = async (req, res) => {
   try {
     const { id } = req.params;
-    const { passGiven, passDeliveryMethod, notes } = req.body;
+    const { passGiven, passDeliveryMethod, notes, buyingPrice } = req.body;
 
-    if (!passGiven && passDeliveryMethod === undefined && notes === undefined) {
-      return res.status(400).json({ message: 'No status, delivery method, or notes provided to update.' });
+    if (!passGiven && passDeliveryMethod === undefined && notes === undefined && buyingPrice === undefined) {
+      return res.status(400).json({ message: 'No status, buying price, delivery method, or notes provided to update.' });
     }
 
     const updated = await googleSheetsService.updatePassStatus(id, {
       passGiven,
       passDeliveryMethod,
-      notes
+      notes,
+      buyingPrice
     });
 
     res.json({
@@ -191,7 +192,7 @@ exports.updatePassStatus = async (req, res) => {
 
 exports.bulkUpdatePassStatus = async (req, res) => {
   try {
-    const { items, passGiven, passDeliveryMethod } = req.body;
+    const { items, passGiven, passDeliveryMethod, buyingPrice } = req.body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: 'List of items or IDs is required for bulk update.' });
@@ -203,13 +204,15 @@ exports.bulkUpdatePassStatus = async (req, res) => {
           id: item.id || item.rowIndex,
           passGiven: item.passGiven || passGiven,
           passDeliveryMethod: item.passDeliveryMethod !== undefined ? item.passDeliveryMethod : passDeliveryMethod,
-          notes: item.notes
+          notes: item.notes,
+          buyingPrice: item.buyingPrice !== undefined ? item.buyingPrice : buyingPrice
         };
       }
       return {
         id: item,
         passGiven,
-        passDeliveryMethod
+        passDeliveryMethod,
+        buyingPrice
       };
     });
 

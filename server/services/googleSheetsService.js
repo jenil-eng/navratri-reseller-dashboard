@@ -454,7 +454,7 @@ async function updateSale(saleIdOrRowIndex, saleData) {
   }
 }
 
-async function updatePassStatus(saleIdOrRowIndex, { passGiven, passDeliveryMethod, notes }) {
+async function updatePassStatus(saleIdOrRowIndex, { passGiven, passDeliveryMethod, notes, buyingPrice }) {
   salesCache = null; // Invalidate cache
 
   if (!isConfigured || !sheetsApi) {
@@ -463,9 +463,20 @@ async function updatePassStatus(saleIdOrRowIndex, { passGiven, passDeliveryMetho
     if (idx === -1) {
       throw new Error('Sale not found');
     }
-    if (passGiven !== undefined) data.sales[idx].passGiven = passGiven;
-    if (passDeliveryMethod !== undefined) data.sales[idx].passDeliveryMethod = passDeliveryMethod;
-    if (notes !== undefined) data.sales[idx].notes = notes;
+    const current = data.sales[idx];
+    if (passGiven !== undefined) current.passGiven = passGiven;
+    if (passDeliveryMethod !== undefined) current.passDeliveryMethod = passDeliveryMethod;
+    if (notes !== undefined) current.notes = notes;
+    if (buyingPrice !== undefined && buyingPrice !== null && buyingPrice !== '') {
+      const buyNum = Number(buyingPrice) || 0;
+      const qty = Number(current.quantity) || 1;
+      const selling = Number(current.sellingPrice) || 0;
+      const totalCost = qty * buyNum;
+      const totalRevenue = Number(current.totalSellingAmount) || (qty * selling);
+      current.buyingPrice = buyNum;
+      current.totalBuyingCost = totalCost;
+      current.profit = totalRevenue - totalCost;
+    }
     writeData(data);
     return data.sales[idx];
   }
@@ -481,8 +492,24 @@ async function updatePassStatus(saleIdOrRowIndex, { passGiven, passDeliveryMetho
     if (!matchedSale) throw new Error('Sale record not found in sheet');
     rowIndex = matchedSale.rowIndex;
 
+    let updatedBuyingPrice = matchedSale.buyingPrice;
+    let updatedTotalBuyingCost = matchedSale.totalBuyingCost;
+    let updatedProfit = matchedSale.profit;
+
+    if (buyingPrice !== undefined && buyingPrice !== null && buyingPrice !== '') {
+      updatedBuyingPrice = Number(buyingPrice) || 0;
+      const qty = Number(matchedSale.quantity) || 1;
+      const selling = Number(matchedSale.sellingPrice) || 0;
+      updatedTotalBuyingCost = qty * updatedBuyingPrice;
+      const totalRevenue = Number(matchedSale.totalSellingAmount) || (qty * selling);
+      updatedProfit = totalRevenue - updatedTotalBuyingCost;
+    }
+
     const updatedSale = {
       ...matchedSale,
+      buyingPrice: updatedBuyingPrice,
+      totalBuyingCost: updatedTotalBuyingCost,
+      profit: updatedProfit,
       passGiven: passGiven !== undefined ? passGiven : matchedSale.passGiven,
       passDeliveryMethod: passDeliveryMethod !== undefined ? passDeliveryMethod : matchedSale.passDeliveryMethod,
       notes: notes !== undefined ? notes : matchedSale.notes
