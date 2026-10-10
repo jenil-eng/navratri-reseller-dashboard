@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import api from '../utils/api';
 import StatCard from '../components/StatCard';
 import { StatCardSkeleton, ChartSkeleton, TableSkeleton } from '../components/SkeletonLoader';
@@ -19,7 +20,9 @@ import {
   RefreshCw,
   Eye,
   Edit,
-  Sparkles
+  Sparkles,
+  PackageCheck,
+  ArrowRight
 } from 'lucide-react';
 import {
   BarChart,
@@ -36,6 +39,7 @@ import {
 } from 'recharts';
 
 export default function DashboardPage() {
+  const navigate = useNavigate();
   const [sales, setSales] = useState([]);
   const [lists, setLists] = useState({ passNames: [], passCategories: [], navratriDays: [] });
   const [loading, setLoading] = useState(true);
@@ -325,6 +329,32 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Pending Passes Action Alert Banner */}
+      {!loading && stats.pendingDeliveryCount > 0 && (
+        <div className="bg-gradient-to-r from-amber-500 via-brand-500 to-rose-500 text-white p-4 rounded-2xl shadow-lg shadow-brand-500/15 flex flex-col sm:flex-row items-center justify-between gap-4 border border-amber-300/30">
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center text-white shrink-0">
+              <PackageCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="font-bold text-sm text-white">
+                {stats.pendingDeliveryCount} Pass{stats.pendingDeliveryCount !== 1 ? 'es' : ''} Pending Handover / Delivery!
+              </h4>
+              <p className="text-xs text-white/90">
+                Customers are waiting for their passes. You can directly update pass delivery status in the distribution portal.
+              </p>
+            </div>
+          </div>
+          <Link
+            to="/pending-passes"
+            className="px-4 py-2.5 bg-white text-slate-900 rounded-xl text-xs font-bold hover:bg-slate-100 shadow-md transition whitespace-nowrap flex items-center gap-1.5 shrink-0"
+          >
+            <span>Open Distribution Portal</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+      )}
+
       {/* Summary Cards Grid (8 Metrics) */}
       {loading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
@@ -394,6 +424,12 @@ export default function DashboardPage() {
             icon={AlertCircle}
             color="rose"
             subtitle="Not yet handed over"
+            onClick={() => navigate('/pending-passes')}
+            badge={{
+              label: "Action",
+              value: "Open Portal →",
+              className: "bg-rose-100 text-rose-800 font-bold"
+            }}
           />
         </div>
       )}

@@ -1,7 +1,7 @@
 import React from 'react';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
-export default function StatCard({ title, value, icon: Icon, color = 'brand', subtitle, badge }) {
+export default function StatCard({ title, value, icon: Icon, color = 'brand', subtitle, badge, onClick }) {
   const colorMap = {
     brand: 'bg-brand-50 text-brand-600 border-brand-200',
     emerald: 'bg-emerald-50 text-emerald-600 border-emerald-200',
@@ -12,7 +12,12 @@ export default function StatCard({ title, value, icon: Icon, color = 'brand', su
   };
 
   return (
-    <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md transition duration-200 flex flex-col justify-between">
+    <div
+      onClick={onClick}
+      className={`bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md transition duration-200 flex flex-col justify-between ${
+        onClick ? 'cursor-pointer hover:border-brand-300 hover:ring-2 hover:ring-brand-500/20' : ''
+      }`}
+    >
       <div className="flex items-center justify-between mb-3">
         <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">{title}</span>
         {Icon && (

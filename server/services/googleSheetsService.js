@@ -454,6 +454,71 @@ async function updateSale(saleIdOrRowIndex, saleData) {
   }
 }
 
+async function updatePassStatus(saleIdOrRowIndex, { passGiven, passDeliveryMethod, notes }) {
+  salesCache = null; // Invalidate cache
+
+  if (!isConfigured || !sheetsApi) {
+    const data = readData();
+    const idx = data.sales.findIndex(s => s.id === saleIdOrRowIndex || String(s.rowIndex) === String(saleIdOrRowIndex));
+    if (idx === -1) {
+      throw new Error('Sale not found');
+    }
+    if (passGiven !== undefined) data.sales[idx].passGiven = passGiven;
+    if (passDeliveryMethod !== undefined) data.sales[idx].passDeliveryMethod = passDeliveryMethod;
+    if (notes !== undefined) data.sales[idx].notes = notes;
+    writeData(data);
+    return data.sales[idx];
+  }
+
+  try {
+    await ensureSheetsInitialized();
+    let rowIndex = Number(saleIdOrRowIndex);
+    let matchedSale = null;
+
+    // Fetch sales to find matching sale
+    const sales = await getSales();
+    matchedSale = sales.find(s => s.id === saleIdOrRowIndex || String(s.rowIndex) === String(saleIdOrRowIndex));
+    if (!matchedSale) throw new Error('Sale record not found in sheet');
+    rowIndex = matchedSale.rowIndex;
+
+    const updatedSale = {
+      ...matchedSale,
+      passGiven: passGiven !== undefined ? passGiven : matchedSale.passGiven,
+      passDeliveryMethod: passDeliveryMethod !== undefined ? passDeliveryMethod : matchedSale.passDeliveryMethod,
+      notes: notes !== undefined ? notes : matchedSale.notes
+    };
+
+    const rowValues = objectToSaleRow(updatedSale);
+    const range = `SALES!A${rowIndex}:O${rowIndex}`;
+
+    await sheetsApi.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [rowValues]
+      }
+    });
+
+    salesCache = null;
+    return { ...updatedSale, rowIndex };
+  } catch (err) {
+    console.error('[GoogleSheetsService] Error updating pass status in Google Sheets:', err.message);
+    throw new Error(`Google Sheets Pass Status Update Error: ${err.message}`);
+  }
+}
+
+async function bulkUpdatePassStatus(items) {
+  salesCache = null;
+  const results = [];
+  for (const item of items) {
+    const { id, ...updates } = item;
+    const res = await updatePassStatus(id, updates);
+    results.push(res);
+  }
+  return results;
+}
+
 async function deleteSale(saleIdOrRowIndex) {
   salesCache = null; // Invalidate cache
   if (!isConfigured || !sheetsApi) {
@@ -616,6 +681,8 @@ module.exports = {
   getSales,
   addSale,
   updateSale,
+  updatePassStatus,
+  bulkUpdatePassStatus,
   deleteSale,
   getLists,
   updateEntireLists

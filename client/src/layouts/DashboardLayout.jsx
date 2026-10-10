@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink as RouterNavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import api from '../utils/api';
 import {
   LayoutDashboard,
   PlusCircle,
@@ -11,17 +12,36 @@ import {
   X,
   Sparkles,
   Database,
-  UserCheck
+  UserCheck,
+  PackageCheck
 } from 'lucide-react';
 
 export default function DashboardLayout({ children }) {
   const { user, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
   const navigate = useNavigate();
   const location = useLocation();
 
+  useEffect(() => {
+    let isMounted = true;
+    api.get('/sales')
+      .then(res => {
+        if (!isMounted) return;
+        const sales = res.data?.data || [];
+        const count = sales.filter(s => {
+          const st = String(s.passGiven || '').trim().toLowerCase();
+          return st === 'no' || st === 'partially';
+        }).length;
+        setPendingCount(count);
+      })
+      .catch(() => {});
+    return () => { isMounted = false; };
+  }, [location.pathname]);
+
   const navItems = [
     { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+    { label: 'Pass Distribution', path: '/pending-passes', icon: PackageCheck, badge: pendingCount },
     { label: 'Add Sale', path: '/add-sale', icon: PlusCircle },
     { label: 'Sales History', path: '/sales', icon: History },
     { label: 'Settings', path: '/settings', icon: Settings },
@@ -65,7 +85,12 @@ export default function DashboardLayout({ children }) {
                 }`}
               >
                 <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
-                <span>{item.label}</span>
+                <span className="truncate">{item.label}</span>
+                {item.badge > 0 && (
+                  <span className="ml-auto px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-500 text-white shadow-xs">
+                    {item.badge}
+                  </span>
+                )}
               </RouterNavLink>
             );
           })}
@@ -140,7 +165,12 @@ export default function DashboardLayout({ children }) {
                   }`}
                 >
                   <Icon className="w-5 h-5" />
-                  <span>{item.label}</span>
+                  <span className="flex-1 text-left">{item.label}</span>
+                  {item.badge > 0 && (
+                    <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-rose-500 text-white">
+                      {item.badge}
+                    </span>
+                  )}
                 </RouterNavLink>
               );
             })}

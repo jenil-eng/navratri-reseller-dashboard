@@ -8,6 +8,7 @@ import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import AddSalePage from './pages/AddSalePage';
 import SalesHistoryPage from './pages/SalesHistoryPage';
+import PendingPassesPage from './pages/PendingPassesPage';
 import SettingsPage from './pages/SettingsPage';
 
 export default function App() {
@@ -22,6 +23,8 @@ export default function App() {
             {/* Protected Admin Routes */}
             <Route element={<ProtectedLayout />}>
               <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/pending-passes" element={<PendingPassesPage />} />
+              <Route path="/passes-pending" element={<Navigate to="/pending-passes" replace />} />
               <Route path="/add-sale" element={<AddSalePage />} />
               <Route path="/sales" element={<SalesHistoryPage />} />
               <Route path="/settings" element={<SettingsPage />} />

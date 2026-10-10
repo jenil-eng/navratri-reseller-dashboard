@@ -163,6 +163,24 @@ export default function SalesHistoryPage() {
     }
   };
 
+  const handleQuickStatusChange = async (sale, newStatus) => {
+    const targetId = sale.id || sale.rowIndex;
+    const prevSales = [...sales];
+    setSales(current =>
+      current.map(item => {
+        const itemId = item.id || item.rowIndex;
+        return itemId === targetId ? { ...item, passGiven: newStatus } : item;
+      })
+    );
+    try {
+      await api.patch(`/sales/${targetId}/status`, { passGiven: newStatus });
+      showSuccess(`✓ Pass status updated to "${newStatus}" for ${sale.customerName}.`);
+    } catch (err) {
+      setSales(prevSales);
+      showError(err.response?.data?.message || 'Failed to update pass status.');
+    }
+  };
+
   const clearAllFilters = () => {
     setSearchQuery('');
     setDateFrom('');
@@ -430,9 +448,16 @@ export default function SalesHistoryPage() {
                         </span>
                       </td>
                       <td className="py-3 px-4 text-center">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${passBadge.className}`}>
-                          {passBadge.label}
-                        </span>
+                        <select
+                          value={sale.passGiven || 'No'}
+                          onChange={(e) => handleQuickStatusChange(sale, e.target.value)}
+                          title="Click to change pass status"
+                          className={`px-2.5 py-1 rounded-full text-[11px] font-bold border cursor-pointer focus:outline-none transition shadow-2xs hover:brightness-95 ${passBadge.className}`}
+                        >
+                          <option value="Yes" className="bg-white text-emerald-800">Yes</option>
+                          <option value="Partially" className="bg-white text-amber-800">Partially</option>
+                          <option value="No" className="bg-white text-rose-800">No</option>
+                        </select>
                       </td>
                       <td className="py-3 px-4 text-slate-600 text-[11px]">
                         {sale.passDeliveryMethod}

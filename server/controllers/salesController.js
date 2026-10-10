@@ -161,6 +161,72 @@ exports.updateSale = async (req, res) => {
   }
 };
 
+exports.updatePassStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { passGiven, passDeliveryMethod, notes } = req.body;
+
+    if (!passGiven && passDeliveryMethod === undefined && notes === undefined) {
+      return res.status(400).json({ message: 'No status, delivery method, or notes provided to update.' });
+    }
+
+    const updated = await googleSheetsService.updatePassStatus(id, {
+      passGiven,
+      passDeliveryMethod,
+      notes
+    });
+
+    res.json({
+      success: true,
+      message: `Pass status updated successfully to "${updated.passGiven}".`,
+      data: updated
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update pass status. ' + err.message
+    });
+  }
+};
+
+exports.bulkUpdatePassStatus = async (req, res) => {
+  try {
+    const { items, passGiven, passDeliveryMethod } = req.body;
+
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ message: 'List of items or IDs is required for bulk update.' });
+    }
+
+    const formattedItems = items.map(item => {
+      if (typeof item === 'object') {
+        return {
+          id: item.id || item.rowIndex,
+          passGiven: item.passGiven || passGiven,
+          passDeliveryMethod: item.passDeliveryMethod !== undefined ? item.passDeliveryMethod : passDeliveryMethod,
+          notes: item.notes
+        };
+      }
+      return {
+        id: item,
+        passGiven,
+        passDeliveryMethod
+      };
+    });
+
+    const results = await googleSheetsService.bulkUpdatePassStatus(formattedItems);
+    res.json({
+      success: true,
+      message: `Successfully updated ${results.length} pass${results.length !== 1 ? 'es' : ''}.`,
+      data: results
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to bulk update pass status. ' + err.message
+    });
+  }
+};
+
 exports.deleteSale = async (req, res) => {
   try {
     const { id } = req.params;
